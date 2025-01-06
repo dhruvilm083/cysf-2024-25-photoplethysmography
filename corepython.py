@@ -33,9 +33,6 @@ def smooth_signal(signal, window_size=5):
 
 #revamped the code here w/ zscore outliers
 def compute_bpm_ignoring_outliers(red_intensity, outlier_flags, fps):
-    
-
-    
     filtered_values = []
     keep_indices = []
     for i, val in enumerate(red_intensity):
@@ -60,8 +57,6 @@ def compute_bpm_ignoring_outliers(red_intensity, outlier_flags, fps):
         distance=fps * 0.3,   
         prominence=0.5       
     )
-
-    
     if len(peak_indices_filtered) < 2:
         
         return 60.0, 0.0, smoothed_signal_filtered, []
@@ -107,6 +102,7 @@ def main():
 
     if input_method == "video":
         uploaded_video = st.file_uploader("video file", type=["mp4", "mov", "avi", "mkv"])
+       
         if uploaded_video is not None:
             tfile = tempfile.NamedTemporaryFile(delete=False)
             tfile.write(uploaded_video.read())
@@ -117,11 +113,11 @@ def main():
                 return
 
             fps = cap.get(cv2.CAP_PROP_FPS)
+           
             if fps <= 1:
                 st.warning("unknown fps, default to 30")
                 fps = 30.0
 
-            
             list_avg_red = []
             frame_count = 0
             max_red_vals = []
@@ -151,29 +147,26 @@ def main():
                 st.warning("too dark")
                 return
 
-            
             outlier_bool = mark_outliers(list_avg_red, z_threshold=3.0)
-            
             outlier_flags_str = ["Yes" if b else "No" for b in outlier_bool]
-
-            
             result = compute_bpm_ignoring_outliers(list_avg_red, outlier_bool, fps)
+           
             if isinstance(result[0], str) and result[0] == "ALL_ZERO":
                 st.warning("no red available")
                 return
+               
             bpm, error_bpm, smoothed_filtered, peak_indices_filtered = result
 
             if bpm is None:
                 st.warning("no frames left, you probably weren't recording a heartbeat")
                 return
+               
             sine_wave, freq_hz = generate_sine_wave_ignoring_outliers(bpm, fps, len(list_avg_red), outlier_bool)
 
             st.markdown(f"<h2 style='text-align: center; font-size: 3em;'>{bpm:.1f} BPM</h2>", 
                         unsafe_allow_html=True)
             st.write(f"*error (±)**: {error_bpm:.2f} BPM")
             st.write(f"**frequency**: {freq_hz:.4f} Hz")
-
-            
             df_summary = pd.DataFrame({
                 "file_name": [uploaded_video.name],
                 "heart_rate_bpm": [bpm],
@@ -192,15 +185,9 @@ def main():
                 "max_red_y": max_red_y,
                
             })
-
- 
             smoothed_full = smooth_signal(list_avg_red, window_size=5)
             df_detailed["smoothed_intensity_full"] = smoothed_full
-
-            
             df_detailed["sine_wave"] = sine_wave
-
-        
             df_detailed["peak_detected"] = 0  
             df_detailed["heart_rate_bpm"] = bpm
             df_detailed["error_bpm"] = error_bpm
@@ -217,7 +204,6 @@ def main():
 
     else:
         #upload csv instead
-
         uploaded_csv = st.file_uploader("csv with `average_red_intensity`", type=["csv"])
         if uploaded_csv is not None:
             df_input = pd.read_csv(uploaded_csv)
@@ -231,35 +217,36 @@ def main():
                 value=30.0,
                 help="fps of data"
             )
-
             list_avg_red = df_input["average_red_intensity"].values.tolist()
+           
             if len(list_avg_red) == 0:
                 st.warning("no rows in csv add data")
                 return
 
             outlier_bool = mark_outliers(list_avg_red, z_threshold=3.0)
             outlier_flags_str = ["Yes" if b else "No" for b in outlier_bool]
+           
             if is_video_too_dark(list_avg_red):
                 st.warning("brightness to low as per data")
                 return
 
             result = compute_bpm_ignoring_outliers(list_avg_red, outlier_bool, fps)
+           
             if isinstance(result[0], str) and result[0] == "ALL_ZERO":
                 st.warning("bad frames cant bpm.")
                 return
+               
             bpm, error_bpm, smoothed_filtered, peak_indices_filtered = result
 
             if bpm is None:
                 st.warning("no good frames")
                 return
-
+               
             sine_wave, freq_hz = generate_sine_wave_ignoring_outliers(bpm, fps, len(list_avg_red), outlier_bool)
-
             st.markdown(f"<h2 style='text-align: center; font-size: 3em;'>{bpm:.1f} BPM</h2>", 
                         unsafe_allow_html=True)
             st.write(f"**error (±)**: {error_bpm:.2f} BPM")
             st.write(f"**frequency sin wave**: {freq_hz:.4f} Hz")
-
             df_summary = pd.DataFrame({
                 "csv_file_name": [uploaded_csv.name],
                 "heart_rate_bpm": [bpm],
@@ -267,24 +254,15 @@ def main():
                 "freq_hz": [freq_hz]
             })
             st.dataframe(df_summary)
-
             df_detailed = df_input.copy()
             df_detailed["outlier_frame"] = outlier_flags_str
-
-
             smoothed_full = smooth_signal(list_avg_red, window_size=5)
             df_detailed["smoothed_intensity_full"] = smoothed_full
-
-
             df_detailed["sine_wave"] = sine_wave
-
-           
             df_detailed["peak_detected"] = 0
-
             df_detailed["heart_rate_bpm"] = bpm
             df_detailed["error_bpm"] = error_bpm
             df_detailed["sine_freq_hz"] = freq_hz
-
             csv_bytes = df_detailed.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download Detailed CSV",
