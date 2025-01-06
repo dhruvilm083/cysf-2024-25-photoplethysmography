@@ -18,47 +18,31 @@ def smooth_signal(signal, window_size=5):
 
 def detect_valid_signal(red_intensity, min_variance=20):
     //new code to set minimum variance between peaks and troughs to verify heartbeat
- 
     variance = np.var(red_intensity)
     return variance > min_variance
 
 def compute_heart_rate_and_error(red_intensity, fps):
-    
-   
     smoothed_signal = smooth_signal(red_intensity, window_size=5)
     if not detect_valid_signal(smoothed_signal):
             return None, None, "bad signal"
-//detect valdi signal error if bad
-
-    
+//detect valid signal error if bad
     peak_indices, _ = find_peaks(smoothed_signal, distance=fps*0.5, prominence=0.5)
-
-
+//signal smoothing
     if len(peak_indices) < 2:
         return None, None, "longer video needed"
-
-   
     distances = np.diff(peak_indices)
     if len(distances) == 0:
             return None, None, "no beats found"
-
-
     avg_distance = np.mean(distances)
-
-   
     heart_rate_bpm = (fps / avg_distance) * 60
-
-   
     distances_bpm = (fps / distances) * 60
     error_bpm = np.std(distances_bpm)
-
     return heart_rate_bpm, error_bpm, None
 
 //using streamlit for online access atm
 
 def is_video_too_dark(red_intensity, brightness_threshold=30):
-    avg_red_intensity = np.mean(red_intensity)
-    return avg_red_intensity < brightness_threshold
+    return np.mean(red_intensity) < brightness_threshold
 //check brightness
 
 def main():
@@ -66,7 +50,6 @@ def main():
     uploaded_video = st.file_uploader("video", type=["mp4", "mov", "avi", "mkv"])
 
     if uploaded_video is not None:
-       
         tfile = tempfile.NamedTemporaryFile(delete=False)
         tfile.write(uploaded_video.read())
         cap = cv2.VideoCapture(tfile.name)
@@ -77,60 +60,84 @@ def main():
 
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps == 0:
-            st.warning("fps defaulted to 30")
+        if fps <= 1:
+            st.warning("bad fps, fps defaulted to 30")
             fps = 30.0
 
         red_intensity_values = []
-
-        
         frame_count = 0
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             frame_count += 1
-
-           
+//get red
             red_channel = frame[:,:,2]
             avg_red = np.mean(red_channel)
             red_intensity_values.append(avg_red)
-
         cap.release()
+        if len(red_intensity_values) == 0:
+            st.warning("bad frames")
+            return
 
         if is_video_too_dark(red_intensity_values):
             st.warning("too dark")
             return
 
-        if len(red_intensity_values) > 0:
+        (heart_rate_bpm,
+         error_bpm,
+         error_message,
+         smoothed_signal,
+         peak_indices) = 
+         compute_heart_rate_and_error(red_intensity_values, fps)
+
+        
+
+        if error_message is not None:
             
-            heart_rate_bpm, error_bpm = compute_heart_rate_and_error(red_intensity_values, fps)
-
-            if heart_rate_bpm is not None:
-                st.markdown(f"<h2 style='text-align: center; font-size: 3em;'>"
-                            f"{heart_rate_bpm:.1f} BPM</h2>", unsafe_allow_html=True)
-
-                st.write(f"**error (±)**: {error_bpm:.1f} bpm")
-
-               
-                trial_data = {
-                    "file_name": [uploaded_video.name],
-                    "heart_rate_bpm": [heart_rate_bpm],
-                    "error_bpm": [error_bpm]
-                }
-
-                df_trial = pd.DataFrame(trial_data)
-
-                
-                if st.button("csv save"):
-                    df_trial.to_csv("latest_trial.csv", index=False)
-                    st.success("saved")
-
-                st.dataframe(df_trial)
-            else:
-                st.warning("bad video")
+            st.warning(f"not possible: {error_message}")
         else:
-            st.warning("bad video")
+            
+            st.markdown(f"<h2 style='text-align: center; font-size: 3em;'>{heart_rate_bpm:.1f} BPM</h2>", 
+                        unsafe_allow_html=True)
+            st.write(f"**stdev error (±)**: {error_bpm:.1f} BPM")
+
+            
+            summary_data = {
+                "file_name": [uploaded_video.name],
+                "heart_rate_bpm": [heart_rate_bpm],
+                "error_bpm": [error_bpm]
+            }
+            df_summary = pd.DataFrame(summary_data)
+
+            if st.button("Save summary CSV to disk"):
+                df_summary.to_csv("latest_trial.csv", index=False)
+                st.success("saved csv")
+
+            st.dataframe(df_summary)
+
+           
+            frame_indices = range(len(red_intensity_values))
+            peak_flags = [1 if i in peak_indices else 0 for i in frame_indices]
+
+            df_detailed = pd.DataFrame({
+                "frame_index": frame_indices,
+                "raw_intensity": red_intensity_values,
+                "smoothed_intensity": smoothed_signal,
+                "peak_detected": peak_flags
+            })
+
+            df_detailed["heart_rate_bpm"] = heart_rate_bpm
+            df_detailed["error_bpm"] = error_bpm
+
+            
+            detailed_csv = df_detailed.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Detailed CSV",
+                data=detailed_csv,
+                file_name="detailed_ppg_analysis.csv",
+                mime="text/csv"
+            )
 
 if __name__ == "__main__":
     main()
