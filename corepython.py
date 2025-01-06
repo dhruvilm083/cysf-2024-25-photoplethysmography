@@ -4,7 +4,6 @@ import cv2
 import tempfile
 import pandas as pd
 from scipy.signal import find_peaks
-import pylance 
 
 def mark_outliers(signal, z_threshold=3.0):
    
