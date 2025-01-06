@@ -16,7 +16,7 @@ def smooth_signal(signal, window_size=5):
         smoothed
     ))
 
-def detect_valid_signal(red_intensity, min_variance=50):
+def detect_valid_signal(red_intensity, min_variance=20):
     //new code to set minimum variance between peaks and troughs to verify heartbeat
  
     variance = np.var(red_intensity)
