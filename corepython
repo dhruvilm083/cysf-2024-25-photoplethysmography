@@ -16,20 +16,31 @@ def smooth_signal(signal, window_size=5):
         smoothed
     ))
 
+def detect_valid_signal(red_intensity, min_variance=50):
+    //new code to set minimum variance between peaks and troughs to verify heartbeat
+ 
+    variance = np.var(red_intensity)
+    return variance > min_variance
+
 def compute_heart_rate_and_error(red_intensity, fps):
     
    
     smoothed_signal = smooth_signal(red_intensity, window_size=5)
+    if not detect_valid_signal(smoothed_signal):
+            return None, None, "bad signal"
+//detect valdi signal error if bad
 
     
     peak_indices, _ = find_peaks(smoothed_signal, distance=fps*0.5, prominence=0.5)
 
 
     if len(peak_indices) < 2:
-        return None, None
+        return None, None, "longer video needed"
 
    
     distances = np.diff(peak_indices)
+    if len(distances) == 0:
+            return None, None, "no beats found"
 
 
     avg_distance = np.mean(distances)
@@ -41,9 +52,14 @@ def compute_heart_rate_and_error(red_intensity, fps):
     distances_bpm = (fps / distances) * 60
     error_bpm = np.std(distances_bpm)
 
-    return heart_rate_bpm, error_bpm
+    return heart_rate_bpm, error_bpm, None
 
 //using streamlit for online access atm
+
+def is_video_too_dark(red_intensity, brightness_threshold=30):
+    avg_red_intensity = np.mean(red_intensity)
+    return avg_red_intensity < brightness_threshold
+//check brightness
 
 def main():
     
@@ -81,6 +97,10 @@ def main():
             red_intensity_values.append(avg_red)
 
         cap.release()
+
+        if is_video_too_dark(red_intensity_values):
+            st.warning("too dark")
+            return
 
         if len(red_intensity_values) > 0:
             
