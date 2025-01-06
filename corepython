@@ -1,0 +1,116 @@
+import streamlit as st
+import numpy as np
+import cv2
+import tempfile
+import pandas as pd
+from scipy.signal import find_peaks
+
+
+def smooth_signal(signal, window_size=5):
+    
+    if window_size < 2:
+        return signal
+    smoothed = np.convolve(signal, np.ones(window_size)/window_size, mode='valid')
+    return np.concatenate((
+        np.full(window_size-1, smoothed[0]),
+        smoothed
+    ))
+
+def compute_heart_rate_and_error(red_intensity, fps):
+    
+   
+    smoothed_signal = smooth_signal(red_intensity, window_size=5)
+
+    
+    peak_indices, _ = find_peaks(smoothed_signal, distance=fps*0.5, prominence=0.5)
+
+
+    if len(peak_indices) < 2:
+        return None, None
+
+   
+    distances = np.diff(peak_indices)
+
+
+    avg_distance = np.mean(distances)
+
+   
+    heart_rate_bpm = (fps / avg_distance) * 60
+
+   
+    distances_bpm = (fps / distances) * 60
+    error_bpm = np.std(distances_bpm)
+
+    return heart_rate_bpm, error_bpm
+
+//using streamlit for online access atm
+
+def main():
+    
+    uploaded_video = st.file_uploader("video", type=["mp4", "mov", "avi", "mkv"])
+
+    if uploaded_video is not None:
+       
+        tfile = tempfile.NamedTemporaryFile(delete=False)
+        tfile.write(uploaded_video.read())
+        cap = cv2.VideoCapture(tfile.name)
+
+        if not cap.isOpened():
+            st.error("bad video")
+            return
+
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps == 0:
+            st.warning("fps defaulted to 30")
+            fps = 30.0
+
+        red_intensity_values = []
+
+        
+        frame_count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame_count += 1
+
+           
+            red_channel = frame[:,:,2]
+            avg_red = np.mean(red_channel)
+            red_intensity_values.append(avg_red)
+
+        cap.release()
+
+        if len(red_intensity_values) > 0:
+            
+            heart_rate_bpm, error_bpm = compute_heart_rate_and_error(red_intensity_values, fps)
+
+            if heart_rate_bpm is not None:
+                st.markdown(f"<h2 style='text-align: center; font-size: 3em;'>"
+                            f"{heart_rate_bpm:.1f} BPM</h2>", unsafe_allow_html=True)
+
+                st.write(f"**error (±)**: {error_bpm:.1f} bpm")
+
+               
+                trial_data = {
+                    "file_name": [uploaded_video.name],
+                    "heart_rate_bpm": [heart_rate_bpm],
+                    "error_bpm": [error_bpm]
+                }
+
+                df_trial = pd.DataFrame(trial_data)
+
+                
+                if st.button("csv save"):
+                    df_trial.to_csv("latest_trial.csv", index=False)
+                    st.success("saved")
+
+                st.dataframe(df_trial)
+            else:
+                st.warning("bad video")
+        else:
+            st.warning("bad video")
+
+if __name__ == "__main__":
+    main()
